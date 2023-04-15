@@ -1,0 +1,15 @@
+version: "3.5"
+
+services:
+  homie-input:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: homie-input:0.0.1
+    network_mode: "bridge"
+    pid: "host"
+    container_name: homie-input
+    environment:
+      - MQTT_USERNAME=admin
+      - MQTT_PASSWORD=password
+    restart: always
