@@ -5,11 +5,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: homie-input:0.0.1
+    image: rabarar/homie-input:0.0.3
     network_mode: "bridge"
     pid: "host"
     container_name: homie-input
     environment:
       - MQTT_USERNAME=admin
       - MQTT_PASSWORD=password
+      - HOMIEGRAF_LEVEL=info
     restart: always

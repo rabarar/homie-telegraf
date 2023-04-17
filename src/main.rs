@@ -169,8 +169,14 @@ async fn main() -> Result<(), PollError> {
                                     val
                                 }
                                 Err(_e) => {
-                                    error!("can't convert {} to float, setting to 0.0", value);
-                                    0.0
+                                    match value.as_str() { 
+                                        "true" => 1.0,
+                                        "false"  => 0.0,
+                                        _ => {
+                                            error!("can't convert {} to float, setting to 0.0", value);
+                                            0.0
+                                        }
+                                    }
 
                                 }
                             },
@@ -185,6 +191,20 @@ async fn main() -> Result<(), PollError> {
                             }
                             Err(e) => {
                                 error!("failed to write point, error writing: {}", e);
+                                info!("attempting to reconnect");
+                                drop(telegraf_client);
+                                telegraf_client = Client::new(&format!("tcp://{}:{}", host, port))
+                                    .expect(&format!("failed to connect to {}:{}", host, port));
+                                match telegraf_client.write(&point) {
+                                    Ok(_) => {
+                                        trace!("successfully reconnected and wrote point {:?}", &point);
+                                    }
+                                    Err(e) => {
+                                        error!("failed to write point after attempted reconnect: {}", e);
+                                        panic!("terminal error, cannot reconnect to telegraf server");
+                                    }
+                                }
+
                             }
                         }
                     } else {
