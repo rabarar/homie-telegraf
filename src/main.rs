@@ -27,6 +27,128 @@ struct HomieMetric {
 
 }
 
+fn in_zone_priority(s:&str) -> bool {
+    match s {
+        "economy" | "comfort"  => true,
+        _ => false
+    }
+}
+
+fn in_current_mode(s:&str) -> bool {
+    match s {
+        "lockout" | "standby" |  "blower" | "heating"
+            | "heating_with_aux" | "emergency_heat"
+            | "cooling" | "waiting" | "h1" | "h2" | "h3"| "c1" | "c2" => true,
+        _ => false
+    }
+}
+
+fn in_target_fan_mode(s:&str) -> bool {
+    match s {
+        "auto" | "continuous" | "intermittent" => true,
+        _ => false
+    }
+}
+
+fn in_target_mode(s:&str) -> bool {
+    match s {
+        "off" | "auto" | "cool" | "heat" | "eheat" => true,
+        _ => false
+    }
+}
+
+fn in_humidifier_mode(s:&str) -> bool {
+    match s {
+        "auto" | "manual" => true,
+        _ => false
+    }
+}
+
+fn current_mode_to_value(s:&str) -> Option<f32> {
+
+    if in_current_mode(s) != true {
+        None
+    } else {
+        Some(match s {
+            "lockout" => 1f32,
+            "standby" => 2f32,
+            "blower" => 3f32,
+            "heating" => 4f32,
+            "heating_with_aux" => 5f32,
+            "emergency_heat" => 6f32,
+            "cooling" => 7f32,
+            "waiting" => 8f32,
+            "h1" => 2.1,
+            "h2" => 2.2,
+            "h3" => 2.3,
+            "c1" => 2.4,
+            "c2" => 2.5,
+            _ => 0f32
+        })
+
+    }
+}
+
+fn humidifier_mode_to_value(s:&str) -> Option<f32> {
+
+    if in_humidifier_mode(s) != true {
+        None
+    } else {
+        Some(match s {
+            "auto" => 1f32,
+            "manual" => 2f32,
+            _ => 0f32
+        })
+
+    }
+}
+
+fn zone_priority_to_value(s:&str) -> Option<f32> {
+
+    if in_zone_priority(s) != true {
+        None
+    } else {
+        Some(match s {
+            "economy" => 1f32,
+            "comfort" => 2f32,
+            _ => 0f32
+        })
+
+    }
+}
+
+fn target_mode_to_value(s:&str) -> Option<f32> {
+
+    if in_target_mode(s) != true {
+        None
+    } else {
+        Some(match s {
+            "off" => 1f32,
+            "auto" => 2f32,
+            "cool" => 3f32,
+            "heat" => 4f32,
+            "eheat" => 5f32,
+            _ => 0f32
+        })
+
+    }
+}
+
+fn target_fan_mode_to_value(s:&str) -> Option<f32> {
+
+    if in_target_fan_mode(s) != true {
+        None
+    } else {
+        Some(match s {
+            "auto" => 1f32,
+            "continuous" => 2f32,
+            "intermittent " => 3f32,
+            _ => 0f32
+        })
+
+    }
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -169,11 +291,17 @@ async fn main() -> Result<(), PollError> {
                                     val
                                 }
                                 Err(_e) => {
+                                    // for obvious values, let's convert to a numeric value
                                     match value.as_str() { 
-                                        "true" => 1.0,
-                                        "false"  => 0.0,
+                                        "true" | "open"  => 1.0,
+                                        "false" | "closed"  => 0.0,
+                                        s if in_current_mode(s) =>  current_mode_to_value(s).unwrap(),
+                                        s if in_humidifier_mode(s) => humidifier_mode_to_value(s).unwrap(),
+                                        s if in_target_mode(s) => target_mode_to_value(s).unwrap(),
+                                        s if in_target_fan_mode(s) => target_fan_mode_to_value(s).unwrap(),
+                                        s if in_zone_priority(s) => zone_priority_to_value(s).unwrap(),
                                         _ => {
-                                            error!("can't convert {} to float, setting to 0.0", value);
+                                            error!("can't convert {} to float for {}/{}/{}, setting to 0.0", value, device_id, node_id, property_id);
                                             0.0
                                         }
                                     }
