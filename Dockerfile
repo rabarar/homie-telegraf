@@ -26,4 +26,4 @@ FROM rust:1.68
 COPY --from=build /homie-input/target/release/homie-input .
 
 # set the startup command to run your binary
-ENTRYPOINT ["/homie-input", "192.168.1.158", "5094", "192.168.1.158", "1883", "homie"]
+ENTRYPOINT ["/homie-input", "-x", "influx", "-i",  "8086", "-g", "10402q-MD", "-o", "homie"]

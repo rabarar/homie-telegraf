@@ -1,12 +1,19 @@
-use std::path::PathBuf;
 use std::process;
+use std::fmt;
+use std::str::FromStr;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser};
 
 use homie_controller::{Event, HomieController, PollError};
 use rumqttc::MqttOptions;
 use std::time::Duration;
+
 use telegraf::*;
+
+extern crate influxdb_rs;
+use url::Url;
+use chrono::prelude::*;
+
 use env_logger::{Env};
 
 use serde::Deserialize;
@@ -149,47 +156,121 @@ fn target_fan_mode_to_value(s:&str) -> Option<f32> {
     }
 }
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
+const TELEGRAF_HOST:&str = "192.168.1.158";
+const TELEGRAF_INPUT_SOCKET:u16 = 5094;
+
+const INFLUX_HOST:&str = "192.168.1.158";
+const INFLUX_PORT:u16 = 8086;
+const INFLUX_BUCKET:&str = "HVAC-GEO";
+const INFLUX_ORG:&str = "Baruch";
+
+const MQTT_HOST:&str = "192.168.1.158";
+const MQTT_PORT:u16 = 1883;
+const HOMIE_TOPIC:&str = "homie";
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum TelTransport {
+    Udp,
+    Tcp,
+}
+
+impl fmt::Display for TelTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TelTransport::Udp => write!(f, "udp"),
+            TelTransport::Tcp => write!(f, "tcp"),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
+enum PushMethod {
+    Influx,
+    Telegraf,
+}
+
+impl fmt::Display for PushMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PushMethod::Influx => write!(f, "influx"),
+            PushMethod::Telegraf => write!(f, "telegraf"),
+        }
+    }
+}
+
+impl FromStr for PushMethod {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "influx" => Ok(PushMethod::Influx),
+            "telegraf" => Ok(PushMethod::Telegraf),
+            _ => Err(()),
+        }
+    }
+}
+
+
+#[derive(Parser, Debug)]
+//#[command(author, version, about, long_about = None)]
+struct Args {
+    ///  Push method: Telegraf or influx
+    #[arg(short='x', long, default_value_t = PushMethod::Telegraf.to_string())]
+    push_method: String,
+
     /// telegraf hostname for homie socket input processor
-    tel_host: Option<String>,
+    #[arg(short, long, default_value_t = TELEGRAF_HOST.to_string())]
+    tel_host: String,
+
     /// telegraf port for homie socket input processor (5094)
-    tel_port: Option<u16>, // 5094
+    #[arg(short='p', long, default_value_t = TELEGRAF_INPUT_SOCKET)]
+    tel_port: u16,
+
+    /// telegraf transport: Udp or Tcp
+    #[arg(short='r', long, default_value_t = TelTransport::Udp.to_string())]
+    tel_transport: String,
 
     /// MQTT hostname
-    mqtt_host: Option<String>,
-    /// MQTT port (1883)
-    mqtt_port: Option<u16>, // 1883
-    /// MQTT topic (homie)
-    mqtt_topic: Option<String>, // homie
+    #[arg(short, long, default_value_t = MQTT_HOST.to_string())]
+    mqtt_host: String,
 
-    /// Sets a custom config file
-    #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
+    /// MQTT port (1883)
+    #[arg(short='q', long, default_value_t = MQTT_PORT)]
+    mqtt_port: u16, // 1883
+
+    /// MQTT topic (homie)
+    #[arg(short='o', long, default_value_t = HOMIE_TOPIC.to_string())]
+    mqtt_topic: String, // homie
 
     /// Turn debugging information on
     #[arg(short, long, action = clap::ArgAction::Count)]
     debug: u8,
 
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
+    /// Influx Hostname
+    #[arg(short='f', long, default_value_t = INFLUX_HOST.to_string())]
+    influx_host: String,
 
-#[derive(Subcommand)]
-enum Commands {
-    /// does testing things
-    Test {
-        /// lists test values
-        #[arg(short, long)]
-        list: bool,
-    },
+    /// Influx port (8086)
+    #[arg(short='i', long, default_value_t = INFLUX_PORT)]
+    influx_port: u16,
+
+    /// Influx Bucket
+    #[arg(short='b', long, default_value_t = INFLUX_BUCKET.to_string())]
+    influx_bucket: String,
+
+    /// Influx Org
+    #[arg(short='g', long, default_value_t = INFLUX_ORG.to_string())]
+    influx_org: String,
+
 }
 
 #[derive(Deserialize, Debug)]
-struct MQTTCreds {
-    username: String, // admin
-    password: String, // password
+struct EnvConfig {
+    mqtt_username: String, // admin
+    mqtt_password: String, // password
+    influx_key: String, // see influx
 }
 
 #[tokio::main]
@@ -202,71 +283,71 @@ async fn main() -> Result<(), PollError> {
 
     env_logger::init_from_env(env);
 
+    // see if the config is setup
+    let env_config = envy::prefixed("HOMIE_")
+        .from_env::<EnvConfig>()
+        .expect("missing environmental variables");
+
 
     // setup command-line processing
-    let cli = Cli::parse();
+    let cli = Args::parse();
 
-    let mut host:&str;
-    let mut port:u16;
+    let push_method = PushMethod::from_str(&cli.push_method)
+        .map_err(|e| {
+            error!("{}", &format!("Invalid push method specified: {}, {:?}", cli.push_method, e));
+            process::exit(1);
+        });
 
-    if let Some(h) = cli.tel_host.as_deref() {
-        host = h;
-        info!("using telegraf host: [{}]", host)
+    info!("using push method [{:?}]", push_method.as_ref());
+
+    if !cli.tel_host.is_empty() {
+        info!("using telegraf host: [{}]", cli.tel_host)
     } else {
         error!("no telegraf host specified, exiting.");
         process::exit(1);
     }
 
 
-    if let Some(p) = cli.tel_port {
-        port = p;
-        info!("using telegraf port: [{}]", port)
-    } else {
-        error!("no telegraf port specified, exiting.");
-        process::exit(1);
-    }
+    info!("using telegraf port: [{:?}]", cli.tel_port);
 
-    let mut telegraf_client = Client::new(&format!("tcp://{}:{}", host, port))
-        .expect(&format!("failed to connect to {}:{}", host, port));
+    let mut telegraf_client = Client::new(&format!("{}://{}:{}", TelTransport::Udp, cli.tel_host, cli.tel_port))
+        .expect(&format!("failed to connect to {}:{}", cli.tel_host, cli.tel_port));
 
 
-    if let Some(h) = cli.mqtt_host.as_deref() {
-        host = h;
-        info!("using MQTT host: [{}]", host)
+    info!("using influx: {}:{} Bucket=[{}], Org=[{}]", cli.influx_host, cli.influx_port, cli.influx_bucket, cli.influx_org);
+    let influx_client = influxdb_rs::Client::new(Url::parse(&format!("http://{}:{}", cli.influx_host, cli.influx_port)).unwrap(),
+            cli.influx_bucket,
+            cli.influx_org,
+            env_config.influx_key).await.unwrap();
+
+    if !cli.mqtt_host.is_empty() {
+        info!("using MQTT host: [{}]", cli.mqtt_host)
     } else {
         error!("no MQTT host specified, exiting.");
         process::exit(1);
     }
 
-    if let Some(p) = cli.mqtt_port {
-        port = p;
-        info!("using MQTT port: [{}]", port)
-    } else {
-        error!("no MQTT port specified, exiting.");
-        process::exit(1);
-    }
+    info!("using MQTT port: [{}]", cli.mqtt_port);
 
-    // see if the username and password are set
-    let mqtt_creds = envy::prefixed("MQTT_")
-        .from_env::<MQTTCreds>()
-        .expect("Please provide MQTT_USERNAME and MQTT_PASSWORD env vars");
 
-    trace!("using MQTT Creds: [{:#?}]", mqtt_creds);
+    trace!("using MQTT Creds: [{}, {}]", env_config.mqtt_username, env_config.mqtt_password);
+    trace!("using MQTT topic: [{}]", cli.mqtt_topic);
 
-    let mut mqttoptions = MqttOptions::new("homie_controller", host, port);
+    let mut mqttoptions = MqttOptions::new(&format!("homie_controller_{}",
+        process::id()),
+        cli.mqtt_host,
+        cli.mqtt_port);
+
     mqttoptions.set_keep_alive(Duration::from_secs(5));
-    mqttoptions.set_credentials(mqtt_creds.username, mqtt_creds.password);
+    mqttoptions.set_credentials(env_config.mqtt_username, env_config.mqtt_password);
 
     // set the topic - likely should be homie
-    let topic:&str;
-    if let Some(t) = cli.mqtt_topic.as_deref() {
-        topic = t;
-    } else {
+    if cli.mqtt_topic.is_empty() {
         error!("no MQTT topic was specified, exiting.");
         process::exit(1);
     }
 
-    let (controller, mut event_loop) = HomieController::new(mqttoptions, topic);
+    let (controller, mut event_loop) = HomieController::new(mqttoptions, &cli.mqtt_topic);
 
     loop {
         match controller.poll(&mut event_loop).await {
@@ -277,13 +358,10 @@ async fn main() -> Result<(), PollError> {
                         node_id,
                         property_id,
                         value,
-                        fresh,
+                        fresh: _,
                     } = event
                     {
-                        trace!(
-                            "{}/{}/{} = {} ({})",
-                            device_id, node_id, property_id, value, fresh
-                        );
+                        // trace!( "{}/{}/{} = {} ({})", device_id, node_id, property_id, value, fresh);
 
                         let point = HomieMetric {
                             value: match value.parse() {
@@ -313,42 +391,75 @@ async fn main() -> Result<(), PollError> {
                             property_id_tag: property_id,
                         };
 
-                        match telegraf_client.write(&point) {
+                        //if PushMethod::from_str(&cli.push_method).unwrap() == PushMethod::Telegraf {
+                        if push_method == Ok(PushMethod::Telegraf) {
+                            match telegraf_client.write(&point) {
                             Ok(_val) => {
                                 trace!("writing point: {:?}", &point);
                             }
                             Err(e) => {
                                 error!("failed to write point, error writing: {}", e);
-                                info!("attempting to reconnect");
-                                drop(telegraf_client);
-                                telegraf_client = Client::new(&format!("tcp://{}:{}", host, port))
-                                    .expect(&format!("failed to connect to {}:{}", host, port));
-                                match telegraf_client.write(&point) {
-                                    Ok(_) => {
-                                        trace!("successfully reconnected and wrote point {:?}", &point);
+                                let retry = false;
+                                if retry {
+                                    info!("attempting to reconnect");
+                                    drop(telegraf_client);
+                                    telegraf_client = Client::new(&format!("tcp://{}:{}", cli.tel_host, cli.tel_port))
+                                        .expect(&format!("failed to connect to {}:{}", cli.tel_host, cli.tel_port));
+                                    info!("reconnected, attempting to write point...");
+                                    match telegraf_client.write(&point) {
+                                        Ok(_) => {
+                                            trace!("successfully reconnected and wrote point {:?}", &point);
+                                        }
+                                        Err(e) => {
+                                            error!("failed to write point after attempted reconnect: {}", e);
+                                            panic!("terminal error, cannot reconnect to telegraf server");
+                                        }
                                     }
-                                    Err(e) => {
-                                        error!("failed to write point after attempted reconnect: {}", e);
-                                        panic!("terminal error, cannot reconnect to telegraf server");
-                                    }
+                                } else {
+                                    panic!("terminating...");
                                 }
 
                             }
                         }
+                        } else {
+                            
+                            let now = Utc::now();
+                            let influx_point = influxdb_rs::Point::new("HomieMetric")
+                                .add_tag("device_id_tag", point.device_id_tag)
+                                .add_tag("node_id_tag", point.node_id_tag)
+                                .add_tag("property_id_tag", point.property_id_tag)
+                                .add_field("value", point.value)
+                                .add_timestamp(now.timestamp());
+
+                            info!("influx: attempting to write point: [{:?}]", &influx_point);
+                            let res = influx_client.write_point(influx_point, Some(influxdb_rs::Precision::Seconds), None).await;
+                            match res {
+                                Ok(_) => {
+                                    info!("influxdb: wrote point to influx db");
+                                }
+                                Err(e) => {
+                                    error!("influxdb: failed to write point to influx db: {}", e);
+                                }
+                            }
+   
+                        }
                     } else {
-                        //println!("Event: {:?}", event);
+                        //println!("Event: {}/{}/{}", event.device_id, event.node_id, event.propert_id);
                         //println!("Devices:");
                         for device in controller.devices().values() {
                             if device.has_required_attributes() {
-                                //println!(" * {:?}", device);
+                                info!(" * {}", device.id);
                             } else {
-                                //println!(" * {} not ready.", device.id);
+                                info!(" * {} not ready.", device.id);
                             }
                         }
                     }
                 }
             }
-            Err(e) => error!("Error: {:?}", e),
+            Err(e) => {
+                error!("Homie Controller Poll Error: {:?}", e);
+                process::exit(1);
+            }
         }
     }
 }
