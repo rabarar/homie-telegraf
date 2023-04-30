@@ -8,7 +8,8 @@ wrapped in a `Docker` setup so running it is quite simple:
 
 ```
 [[inputs.socket_listener]]
-  service_address = "tcp://0.0.0.0:5094"
+  #service_address = "tcp://0.0.0.0:5094"
+  service_address = "udp://0.0.0.0:5094"
 
 ```
 
@@ -27,9 +28,5 @@ wrapped in a `Docker` setup so running it is quite simple:
 - Next use `docker-compose create` to build the Docker image and container
 
 And that's it
-
-# Next Steps
-Homie messages can contain non-numeric fields. I think I am going to implement a mapping yaml file that lets you specify how to map non-numeric items. For
-example, `standby`, `low`, `high` might be an enum coming from a topic. Mapping these to `0`, `1`, and, `2` might be away to see levels and changes between them
 
 
