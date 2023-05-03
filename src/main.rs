@@ -1,8 +1,8 @@
-use std::process;
 use std::fmt;
+use std::process;
 use std::str::FromStr;
 
-use clap::{Parser};
+use clap::Parser;
 
 use homie_controller::{Event, HomieController, PollError};
 use rumqttc::MqttOptions;
@@ -11,18 +11,17 @@ use std::time::Duration;
 use telegraf::*;
 
 extern crate influxdb_rs;
-use url::Url;
 use chrono::prelude::*;
+use url::Url;
 
-use env_logger::{Env};
+use env_logger::Env;
 
 use serde::Deserialize;
 
 #[macro_use]
 extern crate log;
 
-#[derive(Debug)]
-#[derive(Metric)]
+#[derive(Debug, Metric)]
 struct HomieMetric {
     value: f32,
     #[telegraf(tag)]
@@ -31,48 +30,45 @@ struct HomieMetric {
     node_id_tag: String,
     #[telegraf(tag)]
     property_id_tag: String,
-
 }
 
-fn in_zone_priority(s:&str) -> bool {
+fn in_zone_priority(s: &str) -> bool {
     match s {
-        "economy" | "comfort"  => true,
-        _ => false
+        "economy" | "comfort" => true,
+        _ => false,
     }
 }
 
-fn in_current_mode(s:&str) -> bool {
+fn in_current_mode(s: &str) -> bool {
     match s {
-        "lockout" | "standby" |  "blower" | "heating"
-            | "heating_with_aux" | "emergency_heat"
-            | "cooling" | "waiting" | "h1" | "h2" | "h3"| "c1" | "c2" => true,
-        _ => false
+        "lockout" | "standby" | "blower" | "heating" | "heating_with_aux" | "emergency_heat"
+        | "cooling" | "waiting" | "h1" | "h2" | "h3" | "c1" | "c2" => true,
+        _ => false,
     }
 }
 
-fn in_target_fan_mode(s:&str) -> bool {
+fn in_target_fan_mode(s: &str) -> bool {
     match s {
         "auto" | "continuous" | "intermittent" => true,
-        _ => false
+        _ => false,
     }
 }
 
-fn in_target_mode(s:&str) -> bool {
+fn in_target_mode(s: &str) -> bool {
     match s {
         "off" | "auto" | "cool" | "heat" | "eheat" => true,
-        _ => false
+        _ => false,
     }
 }
 
-fn in_humidifier_mode(s:&str) -> bool {
+fn in_humidifier_mode(s: &str) -> bool {
     match s {
         "auto" | "manual" => true,
-        _ => false
+        _ => false,
     }
 }
 
-fn current_mode_to_value(s:&str) -> Option<f32> {
-
+fn current_mode_to_value(s: &str) -> Option<f32> {
     if in_current_mode(s) != true {
         None
     } else {
@@ -90,42 +86,36 @@ fn current_mode_to_value(s:&str) -> Option<f32> {
             "h3" => 2.3,
             "c1" => 2.4,
             "c2" => 2.5,
-            _ => 0f32
+            _ => 0f32,
         })
-
     }
 }
 
-fn humidifier_mode_to_value(s:&str) -> Option<f32> {
-
+fn humidifier_mode_to_value(s: &str) -> Option<f32> {
     if in_humidifier_mode(s) != true {
         None
     } else {
         Some(match s {
             "auto" => 1f32,
             "manual" => 2f32,
-            _ => 0f32
+            _ => 0f32,
         })
-
     }
 }
 
-fn zone_priority_to_value(s:&str) -> Option<f32> {
-
+fn zone_priority_to_value(s: &str) -> Option<f32> {
     if in_zone_priority(s) != true {
         None
     } else {
         Some(match s {
             "economy" => 1f32,
             "comfort" => 2f32,
-            _ => 0f32
+            _ => 0f32,
         })
-
     }
 }
 
-fn target_mode_to_value(s:&str) -> Option<f32> {
-
+fn target_mode_to_value(s: &str) -> Option<f32> {
     if in_target_mode(s) != true {
         None
     } else {
@@ -135,14 +125,12 @@ fn target_mode_to_value(s:&str) -> Option<f32> {
             "cool" => 3f32,
             "heat" => 4f32,
             "eheat" => 5f32,
-            _ => 0f32
+            _ => 0f32,
         })
-
     }
 }
 
-fn target_fan_mode_to_value(s:&str) -> Option<f32> {
-
+fn target_fan_mode_to_value(s: &str) -> Option<f32> {
     if in_target_fan_mode(s) != true {
         None
     } else {
@@ -150,23 +138,22 @@ fn target_fan_mode_to_value(s:&str) -> Option<f32> {
             "auto" => 1f32,
             "continuous" => 2f32,
             "intermittent " => 3f32,
-            _ => 0f32
+            _ => 0f32,
         })
-
     }
 }
 
-const TELEGRAF_HOST:&str = "192.168.1.158";
-const TELEGRAF_INPUT_SOCKET:u16 = 5094;
+const TELEGRAF_HOST: &str = "192.168.1.158";
+const TELEGRAF_INPUT_SOCKET: u16 = 5094;
 
-const INFLUX_HOST:&str = "192.168.1.158";
-const INFLUX_PORT:u16 = 8086;
-const INFLUX_BUCKET:&str = "HVAC-GEO";
-const INFLUX_ORG:&str = "Baruch";
+const INFLUX_HOST: &str = "192.168.1.158";
+const INFLUX_PORT: u16 = 8086;
+const INFLUX_BUCKET: &str = "HVAC-GEO";
+const INFLUX_ORG: &str = "Baruch";
 
-const MQTT_HOST:&str = "192.168.1.158";
-const MQTT_PORT:u16 = 1883;
-const HOMIE_TOPIC:&str = "homie";
+const MQTT_HOST: &str = "192.168.1.158";
+const MQTT_PORT: u16 = 1883;
+const HOMIE_TOPIC: &str = "homie";
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -211,7 +198,6 @@ impl FromStr for PushMethod {
         }
     }
 }
-
 
 #[derive(Parser, Debug)]
 //#[command(author, version, about, long_about = None)]
@@ -263,19 +249,17 @@ struct Args {
     /// Influx Org
     #[arg(short='g', long, default_value_t = INFLUX_ORG.to_string())]
     influx_org: String,
-
 }
 
 #[derive(Deserialize, Debug)]
 struct EnvConfig {
     mqtt_username: String, // admin
     mqtt_password: String, // password
-    influx_key: String, // see influx
+    influx_key: String,    // see influx
 }
 
 #[tokio::main]
 async fn main() -> Result<(), PollError> {
-
     // setup logging
     let env = Env::default()
         .filter_or("HOMIEGRAF_LEVEL", "trace")
@@ -288,15 +272,19 @@ async fn main() -> Result<(), PollError> {
         .from_env::<EnvConfig>()
         .expect("missing environmental variables");
 
-
     // setup command-line processing
     let cli = Args::parse();
 
-    let push_method = PushMethod::from_str(&cli.push_method)
-        .map_err(|e| {
-            error!("{}", &format!("Invalid push method specified: {}, {:?}", cli.push_method, e));
-            process::exit(1);
-        });
+    let push_method = PushMethod::from_str(&cli.push_method).map_err(|e| {
+        error!(
+            "{}",
+            &format!(
+                "Invalid push method specified: {}, {:?}",
+                cli.push_method, e
+            )
+        );
+        process::exit(1);
+    });
 
     info!("using push method [{:?}]", push_method.as_ref());
 
@@ -307,18 +295,31 @@ async fn main() -> Result<(), PollError> {
         process::exit(1);
     }
 
-
     info!("using telegraf port: [{:?}]", cli.tel_port);
 
-    let mut telegraf_client = Client::new(&format!("{}://{}:{}", TelTransport::Udp, cli.tel_host, cli.tel_port))
-        .expect(&format!("failed to connect to {}:{}", cli.tel_host, cli.tel_port));
+    let mut telegraf_client = Client::new(&format!(
+        "{}://{}:{}",
+        TelTransport::Udp,
+        cli.tel_host,
+        cli.tel_port
+    ))
+    .expect(&format!(
+        "failed to connect to {}:{}",
+        cli.tel_host, cli.tel_port
+    ));
 
-
-    info!("using influx: {}:{} Bucket=[{}], Org=[{}]", cli.influx_host, cli.influx_port, cli.influx_bucket, cli.influx_org);
-    let influx_client = influxdb_rs::Client::new(Url::parse(&format!("http://{}:{}", cli.influx_host, cli.influx_port)).unwrap(),
-            cli.influx_bucket,
-            cli.influx_org,
-            env_config.influx_key).await.unwrap();
+    info!(
+        "using influx: {}:{} Bucket=[{}], Org=[{}]",
+        cli.influx_host, cli.influx_port, cli.influx_bucket, cli.influx_org
+    );
+    let influx_client = influxdb_rs::Client::new(
+        Url::parse(&format!("http://{}:{}", cli.influx_host, cli.influx_port)).unwrap(),
+        cli.influx_bucket,
+        cli.influx_org,
+        env_config.influx_key,
+    )
+    .await
+    .unwrap();
 
     if !cli.mqtt_host.is_empty() {
         info!("using MQTT host: [{}]", cli.mqtt_host)
@@ -329,14 +330,18 @@ async fn main() -> Result<(), PollError> {
 
     info!("using MQTT port: [{}]", cli.mqtt_port);
 
-
-    trace!("using MQTT Creds: [{}, {}]", env_config.mqtt_username, env_config.mqtt_password);
+    trace!(
+        "using MQTT Creds: [{}, {}]",
+        env_config.mqtt_username,
+        env_config.mqtt_password
+    );
     trace!("using MQTT topic: [{}]", cli.mqtt_topic);
 
-    let mut mqttoptions = MqttOptions::new(&format!("homie_controller_{}",
-        process::id()),
+    let mut mqttoptions = MqttOptions::new(
+        &format!("homie_controller_{}", process::id()),
         cli.mqtt_host,
-        cli.mqtt_port);
+        cli.mqtt_port,
+    );
 
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     mqttoptions.set_credentials(env_config.mqtt_username, env_config.mqtt_password);
@@ -365,25 +370,30 @@ async fn main() -> Result<(), PollError> {
 
                         let point = HomieMetric {
                             value: match value.parse() {
-                                Ok(val) => {
-                                    val
-                                }
+                                Ok(val) => val,
                                 Err(_e) => {
                                     // for obvious values, let's convert to a numeric value
-                                    match value.as_str() { 
-                                        "true" | "open"  => 1.0,
-                                        "false" | "closed"  => 0.0,
-                                        s if in_current_mode(s) =>  current_mode_to_value(s).unwrap(),
-                                        s if in_humidifier_mode(s) => humidifier_mode_to_value(s).unwrap(),
+                                    match value.as_str() {
+                                        "true" | "open" => 1.0,
+                                        "false" | "closed" => 0.0,
+                                        s if in_current_mode(s) => {
+                                            current_mode_to_value(s).unwrap()
+                                        }
+                                        s if in_humidifier_mode(s) => {
+                                            humidifier_mode_to_value(s).unwrap()
+                                        }
                                         s if in_target_mode(s) => target_mode_to_value(s).unwrap(),
-                                        s if in_target_fan_mode(s) => target_fan_mode_to_value(s).unwrap(),
-                                        s if in_zone_priority(s) => zone_priority_to_value(s).unwrap(),
+                                        s if in_target_fan_mode(s) => {
+                                            target_fan_mode_to_value(s).unwrap()
+                                        }
+                                        s if in_zone_priority(s) => {
+                                            zone_priority_to_value(s).unwrap()
+                                        }
                                         _ => {
                                             error!("can't convert {} to float for {}/{}/{}, setting to 0.0", value, device_id, node_id, property_id);
                                             0.0
                                         }
                                     }
-
                                 }
                             },
                             device_id_tag: device_id,
@@ -394,35 +404,42 @@ async fn main() -> Result<(), PollError> {
                         //if PushMethod::from_str(&cli.push_method).unwrap() == PushMethod::Telegraf {
                         if push_method == Ok(PushMethod::Telegraf) {
                             match telegraf_client.write(&point) {
-                            Ok(_val) => {
-                                trace!("writing point: {:?}", &point);
-                            }
-                            Err(e) => {
-                                error!("failed to write point, error writing: {}", e);
-                                let retry = false;
-                                if retry {
-                                    info!("attempting to reconnect");
-                                    drop(telegraf_client);
-                                    telegraf_client = Client::new(&format!("tcp://{}:{}", cli.tel_host, cli.tel_port))
-                                        .expect(&format!("failed to connect to {}:{}", cli.tel_host, cli.tel_port));
-                                    info!("reconnected, attempting to write point...");
-                                    match telegraf_client.write(&point) {
-                                        Ok(_) => {
-                                            trace!("successfully reconnected and wrote point {:?}", &point);
-                                        }
-                                        Err(e) => {
-                                            error!("failed to write point after attempted reconnect: {}", e);
-                                            panic!("terminal error, cannot reconnect to telegraf server");
-                                        }
-                                    }
-                                } else {
-                                    panic!("terminating...");
+                                Ok(_val) => {
+                                    trace!("writing point: {:?}", &point);
                                 }
-
+                                Err(e) => {
+                                    error!("failed to write point, error writing: {}", e);
+                                    let retry = false;
+                                    if retry {
+                                        info!("attempting to reconnect");
+                                        drop(telegraf_client);
+                                        telegraf_client = Client::new(&format!(
+                                            "tcp://{}:{}",
+                                            cli.tel_host, cli.tel_port
+                                        ))
+                                        .expect(&format!(
+                                            "failed to connect to {}:{}",
+                                            cli.tel_host, cli.tel_port
+                                        ));
+                                        info!("reconnected, attempting to write point...");
+                                        match telegraf_client.write(&point) {
+                                            Ok(_) => {
+                                                trace!(
+                                                    "successfully reconnected and wrote point {:?}",
+                                                    &point
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!("failed to write point after attempted reconnect: {}", e);
+                                                panic!("terminal error, cannot reconnect to telegraf server");
+                                            }
+                                        }
+                                    } else {
+                                        panic!("terminating...");
+                                    }
+                                }
                             }
-                        }
                         } else {
-                            
                             let now = Utc::now();
                             let influx_point = influxdb_rs::Point::new("HomieMetric")
                                 .add_tag("device_id_tag", point.device_id_tag)
@@ -432,7 +449,13 @@ async fn main() -> Result<(), PollError> {
                                 .add_timestamp(now.timestamp());
 
                             info!("influx: attempting to write point: [{:?}]", &influx_point);
-                            let res = influx_client.write_point(influx_point, Some(influxdb_rs::Precision::Seconds), None).await;
+                            let res = influx_client
+                                .write_point(
+                                    influx_point,
+                                    Some(influxdb_rs::Precision::Seconds),
+                                    None,
+                                )
+                                .await;
                             match res {
                                 Ok(_) => {
                                     info!("influxdb: wrote point to influx db");
@@ -441,7 +464,6 @@ async fn main() -> Result<(), PollError> {
                                     error!("influxdb: failed to write point to influx db: {}", e);
                                 }
                             }
-   
                         }
                     } else {
                         //println!("Event: {}/{}/{}", event.device_id, event.node_id, event.propert_id);
