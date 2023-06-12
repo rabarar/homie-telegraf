@@ -143,15 +143,15 @@ fn target_fan_mode_to_value(s: &str) -> Option<f32> {
     }
 }
 
-const TELEGRAF_HOST: &str = "192.168.1.158";
+const TELEGRAF_HOST: &str = "192.168.0.158";
 const TELEGRAF_INPUT_SOCKET: u16 = 5094;
 
-const INFLUX_HOST: &str = "192.168.1.158";
+const INFLUX_HOST: &str = "192.168.0.158";
 const INFLUX_PORT: u16 = 8086;
 const INFLUX_BUCKET: &str = "HVAC-GEO";
 const INFLUX_ORG: &str = "Baruch";
 
-const MQTT_HOST: &str = "192.168.1.158";
+const MQTT_HOST: &str = "192.168.0.158";
 const MQTT_PORT: u16 = 1883;
 const HOMIE_TOPIC: &str = "homie";
 
