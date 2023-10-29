@@ -149,7 +149,7 @@ const TELEGRAF_INPUT_SOCKET: u16 = 5094;
 const INFLUX_HOST: &str = "192.168.0.158";
 const INFLUX_PORT: u16 = 8086;
 const INFLUX_BUCKET: &str = "HVAC-GEO";
-const INFLUX_ORG: &str = "Baruch";
+const INFLUX_ORG: &str = "10402q-MD";
 
 const MQTT_HOST: &str = "192.168.0.158";
 const MQTT_PORT: u16 = 1883;
@@ -355,6 +355,7 @@ async fn main() -> Result<(), PollError> {
     let (controller, mut event_loop) = HomieController::new(mqttoptions, &cli.mqtt_topic);
 
     loop {
+        trace!("start loop on topic {} ...", &cli.mqtt_topic);
         match controller.poll(&mut event_loop).await {
             Ok(events) => {
                 for event in events {
@@ -366,7 +367,7 @@ async fn main() -> Result<(), PollError> {
                         fresh: _,
                     } = event
                     {
-                        // trace!( "{}/{}/{} = {} ({})", device_id, node_id, property_id, value, fresh);
+                        trace!( "{}/{}/{} = {} ({})", device_id, node_id, property_id, value, "_");
 
                         let point = HomieMetric {
                             value: match value.parse() {
@@ -467,7 +468,6 @@ async fn main() -> Result<(), PollError> {
                         }
                     } else {
                         //println!("Event: {}/{}/{}", event.device_id, event.node_id, event.propert_id);
-                        //println!("Devices:");
                         for device in controller.devices().values() {
                             if device.has_required_attributes() {
                                 info!(" * {}", device.id);
