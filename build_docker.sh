@@ -1,4 +1,4 @@
 #!/bin/bash
 #
-docker build -t  homie-input:0.1.7 .
+docker build -t  homie-input:0.1.8 .
 

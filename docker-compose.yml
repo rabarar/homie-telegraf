@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: rabarar/homie-input:0.1.7
+    image: rabarar/homie-input:0.1.8
     network_mode: "bridge"
     pid: "host"
     container_name: homie-input
